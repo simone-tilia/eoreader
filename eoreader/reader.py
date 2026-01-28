@@ -466,7 +466,6 @@ MTD_REGEX = {
         ],
     },
     Constellation.S1_RTC_ASF: rf"{CONSTELLATION_REGEX[Constellation.S1_RTC_ASF]}\.kmz",
-    Constellation.ALEPH1: _ALEPH1_MTD_REGEX,
     Constellation.SATELLOGIC: _ALEPH1_MTD_REGEX,
 }
 
