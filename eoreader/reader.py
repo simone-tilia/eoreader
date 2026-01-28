@@ -371,7 +371,6 @@ CONSTELLATION_REGEX = {
     Constellation.GS2: r"DE2_(PM4|PSH|PS3|PS4|MS4|PAN)_L1[A-D]_\d{6}_\d{8}T\d{6}_\d{8}T\d{6}_DE2_\d{5}_.{4}",
     Constellation.S2_SIN: [r"\d", r"B12\.jp2"],
     Constellation.S1_RTC_ASF: r"S1[ABCD]_(IW|EW|SM|WV|S\d)_\d{8}T\d{6}_[DS][VH][PRO]_RTC\d{2}_.*",
-    Constellation.ALEPH1: _ALEPH1_REGEX,
     Constellation.SATELLOGIC: _ALEPH1_REGEX,
 }
 
