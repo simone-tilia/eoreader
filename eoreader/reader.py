@@ -187,8 +187,8 @@ class Constellation(ListEnum):
     WVLG = "WorldView Legion"
     """WorldView Legion"""
 
-    ALEPH1 = "Aleph-1"
-    """Aleph-1 (Satellogic)"""
+    IRIDE_HEO = "IRIDE Hawk for Earth Observation"
+    """IRIDE Hawk for Earth Observation"""
 
     RCM = "RADARSAT-Constellation Mission"
     """RADARSAT-Constellation Mission"""
@@ -307,6 +307,7 @@ _ALEPH1_REGEX = r"\d{8}_\d{6}_\w{3,}_L(0|1[ABCD])(_SR|)(_MS|)_\d{6,}"
 
 CONSTELLATION_REGEX = {
     Constellation.VENUS: r"VENUS-XS_\d{8}-\d{6}-\d{3}_L2A_[A-Z0-9_-]+",
+    Constellation.IRIDE_HEO: r"IMH\d{2}_(0_ST|1BST|1CST)__OPT8_\d{8}T\d{6}_\d{8}T\d{6}_\d{8}T\d{6}_\d{5}______O_A\d{2}",
     Constellation.S1: r"S1[ABCD]_(IW|EW|SM|WV|S\d)_(RAW|SLC|GRD|OCN)[FHM_]_[0-2]S[SD][HV]_\d{8}T\d{6}_\d{8}T\d{6}_\d{6}_.{11}(_COG|)",
     Constellation.S2: r"S2[ABCD]_MSIL(1C|2A)_\d{8}T\d{6}_N\d{4}_R\d{3}_T\d{2}\w{3}_\d{8}T\d{6}",
     # Element84 : S2A_31UDQ_20230714_0_L2A, Sinergise: 0 or 1...
@@ -386,6 +387,7 @@ MTD_REGEX = {
     Constellation.VENUS: r"VENUS-XS_\d{8}-\d{6}-\d{3}_L2A_[A-Z0-9_-]+_MTD_ALL\.xml",
     # Constellation.VENUS: r"VENUS-XS_\d{8}-\d{6}-\d{3}_L2A_[A-Z0-9-]+",
     # Constellation.VENUS: rf"{CONSTELLATION_REGEX[Constellation.VENUS]}_MTD_ALL\.xml",
+    Constellation.IRIDE_HEO: rf"{CONSTELLATION_REGEX[Constellation.IRIDE_HEO]}\.json",
     Constellation.S1: {
         "nested": 1,
         # File that can be found at first level (product/*/file)
@@ -1066,6 +1068,8 @@ def create_product(
         kwargs["is_sinergise"] = True
     elif constellation in [Constellation.SATELLOGIC]:
         sat_class = "aleph1_product"
+    elif constellation in [Constellation.IRIDE_HEO]:
+        sat_class = "iride_heo_product"
 
     # Manage both optical and SAR
     try:
