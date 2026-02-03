@@ -473,7 +473,14 @@ class IrideHeoProduct(OpticalProduct):
         Returns:
             xr.DataArray: Band in reflectance
         """
-        return band_arr
+        # Ensure float computation
+        da = band_arr.astype("float32")
+        da = da / 10000.0
+
+        # Clip physically meaningful reflectance range
+        da = da.clip(min=0.0, max=1.0)
+
+        return da
 
 
     def get_cloud_cover(self) -> float | None:
