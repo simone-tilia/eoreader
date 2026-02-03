@@ -35,7 +35,7 @@ from eoreader.bands import (
 )
 from eoreader.exceptions import InvalidProductError
 from eoreader.products.optical.optical_product import OpticalProduct
-from eoreader.stac import PROJ_CODE
+from eoreader.stac import PROJ_CODE, CENTER_WV, FWHM, GSD, ID, NAME
 from eoreader.utils import simplify
 
 try:
@@ -324,31 +324,21 @@ class IrideHeoProduct(OpticalProduct):
             band_info = asset_bands[0]
 
             bands[band_name] = SpectralBand(
-                band_name,
-                id=band_info.get("name"),
-                name=asset.title,
-                gsd=band_info.get("gsd"),
-                wavelength=(
-                    band_info.get("eo:center_wavelength") * 1000
-                    if band_info.get("eo:center_wavelength") is not None
-                    else None
-                ),
+                eoreader_name=band_name,
+                **{NAME: band_info.get("name"),
+                   ID: band_info.get("name"),
+                   GSD: band_info.get("gsd"),
+                   CENTER_WV: (
+                        band_info.get("eo:center_wavelength") * 1000
+                        if band_info.get("eo:center_wavelength") is not None
+                        else None
+                   ),
+                   FWHM: band_info.get("eo:full_width_half_max")
+                },
             )
 
         return self.bands.map_bands(bands)
 
-
-    def _get_band_path(self, band_id: str) -> Path:
-        """
-        Resolve band path from STAC assets
-        """
-        for asset in self.item["assets"].values():
-            for band in asset.get("bands", []):
-                if band["name"] == band_id:
-                    return self.path / asset["href"]
-
-        raise InvalidProductError(f"Band {band_id} not found in STAC assets")
-    
 
     def get_band_paths(
         self, band_list: list, pixel_size: float = None, **kwargs
@@ -488,6 +478,33 @@ class IrideHeoProduct(OpticalProduct):
 
     def get_cloud_cover(self) -> float | None:
         return None
+    
+    
+    def get_mean_sun_angles(self) -> (float, float):
+        """
+        Get Mean Sun angles (Azimuth and Zenith angles)
+
+        .. code-block:: python
+
+            >>> from eoreader.reader import Reader
+            >>> path = r"S2A_MSIL1C_20200824T110631_N0209_R137_T30TTK_20200824T150432.SAFE.zip"
+            >>> prod = Reader().open(path)
+            >>> prod.get_mean_sun_angles()
+            (149.148155074489, 32.6627897525474)
+
+        Returns:
+            (float, float): Mean Azimuth and Zenith angle
+        """
+        azimuth = self.item.properties.get("view:sun_azimuth")
+        elevation = self.item.properties.get("view:sun_elevation")
+
+        if azimuth is None or elevation is None:
+            raise InvalidProductError("Sun angles not found in STAC properties")
+
+        # Zenith = 90° - elevation
+        zenith = 90.0 - elevation
+
+        return float(azimuth), float(zenith)
 
 
     def _get_quicklook_path(self) -> Path | None:
