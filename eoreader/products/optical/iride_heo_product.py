@@ -69,6 +69,7 @@ class IrideHeoProduct(OpticalProduct):
         """
         self._has_cloud_cover = False
         self.needs_extraction = False
+        self._raw_nodata = 0
 
         # Get STAC Item
         self.item = self._set_item()
@@ -559,4 +560,30 @@ class IrideHeoProduct(OpticalProduct):
         )
 
         return band_arrays
+    
 
+    def _manage_nodata(
+        self,
+        band_arr: xr.DataArray,
+        band: BandNames,
+        pixel_size: float = None,
+        **kwargs,
+    ) -> xr.DataArray:
+        """
+        Manage only nodata pixels
+
+        Args:
+            band_arr (xr.DataArray): Band array
+            band (BandNames): Band name as an SpectralBandNames
+            pixel_size (float): Pixel size
+            kwargs: Other arguments used to load bands
+
+        Returns:
+            xr.DataArray: Cleaned band array
+        """ 
+        no_data_mask = np.where(
+            band_arr.data == self._raw_nodata, self._mask_true, self._mask_false
+        ).astype(np.uint8)
+
+        # -- Merge masks
+        return self._set_nodata_mask(band_arr, no_data_mask)
