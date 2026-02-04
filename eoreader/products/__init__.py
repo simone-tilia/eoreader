@@ -195,6 +195,11 @@ from .optical.s3_slstr_product import (
     SlstrStripe,
 )
 
+from .optical.iride_heo_product import IrideHeoProduct
+__all__ += [
+    "IrideHeoProduct",
+]
+
 # -- SAR --
 __all__ += [
     "SarProduct",
