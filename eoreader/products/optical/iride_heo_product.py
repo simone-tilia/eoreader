@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 import json
 from functools import cache
@@ -20,7 +21,7 @@ from sertit.misc import ListEnum
 
 from shapely.geometry import shape
 
-from eoreader import DATETIME_FMT, cache, utils
+from eoreader import EOREADER_NAME, DATETIME_FMT, cache, utils
 from eoreader.bands import (
     PAN,
     BLUE,
@@ -43,6 +44,7 @@ try:
 except ModuleNotFoundError:
     from typing import Any as Item
 
+LOGGER = logging.getLogger(EOREADER_NAME)
 
 
 class IrideHeoProduct(OpticalProduct):
@@ -477,8 +479,7 @@ class IrideHeoProduct(OpticalProduct):
         da = band_arr.astype("float32")
         da = da / 10000.0
 
-        # Clip physically meaningful reflectance range
-        da = da.clip(min=0.0, max=1.0)
+        LOGGER.debug(f"Converted {band.name} to reflectance")
 
         return da
 
