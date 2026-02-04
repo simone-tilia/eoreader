@@ -559,4 +559,32 @@ class IrideHeoProduct(OpticalProduct):
         )
 
         return band_arrays
+    
+
+    def _manage_nodata(
+        self,
+        band_arr: xr.DataArray,
+        band: BandNames,
+        pixel_size: float = None,
+        **kwargs,
+    ) -> xr.DataArray:
+        """
+        Manage only nodata pixels
+
+        Args:
+            band_arr (xr.DataArray): Band array
+            band (BandNames): Band name as an SpectralBandNames
+            pixel_size (float): Pixel size
+            kwargs: Other arguments used to load bands
+
+        Returns:
+            xr.DataArray: Cleaned band array
+        """ 
+        nodata_mask = xr.where(
+            band_arr == 0,
+            self._mask_true,
+            self._mask_false,
+        )
+
+        return self._set_nodata_mask(band_arr, nodata_mask)
 
