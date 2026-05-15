@@ -141,7 +141,7 @@ class Product:
         **kwargs,
     ) -> None:
         self.needs_extraction = True
-        """Does this product needs to be extracted to be processed ? (:code:`True` by default)."""
+        """Does this product needs to be extracted to be processed? (:code:`True` by default)."""
 
         self.path = AnyPath(product_path)
         if (
@@ -804,8 +804,10 @@ class Product:
     def get_band_file_name(
         self,
         band: BandNames,
-        pixel_size: float,
+        pixel_size: float = None,
         size: list | tuple = None,
+        dem_name: str = "",
+        suffix: str = "tif",
         **kwargs,
     ) -> str:
         """
@@ -830,13 +832,21 @@ class Product:
         res_str = self._pixel_size_to_str(pixel_size)
 
         # Window
-        win_suffix = utils.get_window_suffix(kwargs.get("window"))
+        window = kwargs.get("window")
+        max_extent = None
+        if window is not None:
+            # This way we can avoid RecursionError when computing extents (which doesn't have a window)
+            max_extent = self.extent()
+
+        win_suffix = utils.get_window_suffix(window, max_extent=max_extent)
         if win_suffix:
             win_suffix = f"_{win_suffix}"
 
         # Specific if needed
+        if dem_name:
+            dem_name = f"_{dem_name}"
 
-        return f"{self.condensed_name}_{to_str(band, as_list=False)}_{res_str.replace('.', '-')}{win_suffix}{self._get_band_file_name_sensor_specific_suffix(band, **kwargs)}.tif"
+        return f"{self.condensed_name}_{to_str(band, as_list=False)}{dem_name}_{res_str.replace('.', '-')}{win_suffix}{self._get_band_file_name_sensor_specific_suffix(band, **kwargs)}.{suffix}"
 
     def _get_band_file_name_sensor_specific_suffix(
         self, band: BandNames, **kwargs
@@ -1465,7 +1475,7 @@ class Product:
         band_dict = {}
         for idx in index_list:
             idx_path, idx_exists = self._is_existing(
-                self.get_band_file_name(idx, pixel_size, size, **kwargs)
+                self.get_band_file_name(idx, pixel_size=pixel_size, size=size, **kwargs)
             )
             if idx_exists:
                 band_dict[idx] = utils.read(idx_path)
@@ -1517,12 +1527,14 @@ class Product:
                         kwargs.get(SLOPE_KW, dem_path),
                         pixel_size=pixel_size,
                         size=size,
+                        **kwargs,
                     )
                 elif band == HILLSHADE:
                     dem_path = self._compute_hillshade(
                         kwargs.get(HILLSHADE_KW, dem_path),
                         pixel_size=pixel_size,
                         size=size,
+                        **kwargs,
                     )
                 else:
                     raise InvalidTypeError(f"Unknown DEM band: {band}")
@@ -1846,17 +1858,19 @@ class Product:
     def output(self, value: str):
         """Output directory of the product, to write orthorectified data for example."""
         # Set the new output
-        self._output = AnyPath(value)
-        if not path.is_cloud_path(self._output):
-            self._output = self._output.resolve()
+        new_output = AnyPath(value)
+        if self._output != new_output:
+            self._output = new_output
+            if not path.is_cloud_path(self._output):
+                self._output = self._output.resolve()
 
-        # Move temporary process folder
-        self._move_tmp_process(f"tmp_{self.condensed_name}")
+            # Move temporary process folder
+            self._move_tmp_process(f"tmp_{self.condensed_name}")
 
-        # Remove old output if existing into the new output
-        if self._tmp_output:
-            self._tmp_output.cleanup()
-            self._tmp_output = None
+            # Remove old output if existing into the new output
+            if self._tmp_output:
+                self._tmp_output.cleanup()
+                self._tmp_output = None
 
     def _move_tmp_process(self, new_tmp_name: str):
         """Move temporary process folder"""
@@ -1911,7 +1925,14 @@ class Product:
         Returns:
             AnyPathType: DEM path (as a VRT)
         """
-        dem_name = f"{self.condensed_name}_DEM_{path.get_filename(dem_path)}.vrt"
+        dem_name = self.get_band_file_name(
+            DEM,
+            dem_name=path.get_filename(dem_path),
+            suffix="vrt",
+            pixel_size=pixel_size,
+            size=size,
+            **kwargs,
+        )  # VRT here
 
         warped_dem_path, warped_dem_exists = self._get_out_path(dem_name)
         if warped_dem_exists:
@@ -2100,6 +2121,7 @@ class Product:
         pixel_size: float | tuple = None,
         size: list | tuple = None,
         resampling: Resampling = Resampling.bilinear,
+        **kwargs,
     ) -> AnyPathType:
         """
         Compute Hillshade mask
@@ -2122,6 +2144,7 @@ class Product:
         pixel_size: float | tuple = None,
         size: list | tuple = None,
         resampling: Resampling = Resampling.bilinear,
+        **kwargs,
     ) -> AnyPathType:
         """
         Compute slope mask
@@ -2137,10 +2160,18 @@ class Product:
 
         """
         # Warp DEM
-        warped_dem_path = self._warp_dem(dem_path, pixel_size, size, resampling)
+        warped_dem_path = self._warp_dem(
+            dem_path, pixel_size, size, resampling, **kwargs
+        )
 
         # Get slope path
-        slope_name = f"{self.condensed_name}_SLOPE_{path.get_filename(dem_path)}.tif"
+        slope_name = self.get_band_file_name(
+            SLOPE,
+            dem_name=path.get_filename(dem_path),
+            pixel_size=pixel_size,
+            size=size,
+            **kwargs,
+        )
 
         slope_path, slope_exists = self._get_out_path(slope_name)
         if slope_exists:
@@ -2371,7 +2402,6 @@ class Product:
                         f"Please set the environment variable {DEM_PATH} to an existing file."
                     )
 
-    @cache
     def default_transform(self, **kwargs) -> (Affine, int, int, CRS):
         """
         Returns default transform data of the default band (UTM),
@@ -2387,8 +2417,9 @@ class Product:
             Affine, int, int, CRS: transform, width, height, CRS
 
         """
-        with rasterio.open(str(self.get_default_band_path(**kwargs))) as dst:
-            return dst.transform, dst.width, dst.height, dst.crs
+        return utils.get_default_transform(
+            self.get_default_band_path(**kwargs), **kwargs
+        )
 
     def _pixel_size_from_img_size(self, size: list | tuple = None, **kwargs) -> tuple:
         """

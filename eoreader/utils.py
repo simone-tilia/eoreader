@@ -26,13 +26,14 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+import rasterio
 import xarray as xr
 from lxml import etree
 from rasterio import errors
 from rasterio.enums import Resampling
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.rpc import RPC
-from sertit import AnyPath, files, geometry, path, rasters, misc
+from sertit import AnyPath, files, geometry, path, rasters, misc, vectors
 from sertit.snap import SU_MAX_CORE
 from sertit.types import AnyPathStrType, AnyPathType, AnyXrDataStructure
 
@@ -725,16 +726,37 @@ def get_band_resampling():
     return resampling
 
 
-def get_window_suffix(window) -> str:
+def get_window_suffix(window, max_extent: gpd.GeoDataFrame = None) -> str:
     """Get the window suffix to add it into band filenames"""
     win_suffix = ""
     if window is not None:
-        if path.is_path(window):
-            win_suffix = path.get_filename(window)
-        elif isinstance(window, gpd.GeoDataFrame):
-            win_suffix = window.attrs.get("name")
-        if not win_suffix:
-            win_suffix = f"win{files.hash_file_content(str(window))}"
+        equals = False
+
+        # Only add a window suffix in case the window don't correspond to the product extent
+        if max_extent is not None:
+            if path.is_path(window):
+                win = vectors.read(window).geometry
+            elif isinstance(window, gpd.GeoDataFrame):
+                win = window.geometry
+            else:
+                win = window
+
+            with contextlib.suppress(Exception):
+                ext = max_extent.geometry
+                equals = ext.crs == win.crs and (
+                    win.geom_equals_exact(ext, tolerance=0.1).any()
+                    or ext.geometry.within(win).any()
+                )
+
+        if not equals:
+            if path.is_path(window):
+                win_suffix = path.get_filename(window)
+            elif isinstance(window, gpd.GeoDataFrame):
+                win_suffix = window.attrs.get("name")
+
+            # Fallback
+            if not win_suffix:
+                win_suffix = f"win{files.hash_file_content(str(window))}"
 
     return win_suffix
 
@@ -745,3 +767,20 @@ def get_driver(kwargs: dict) -> str:
     if driver is None:
         driver = os.environ.get(DEFAULT_DRIVER, "COG")
     return driver
+
+
+def get_default_transform(path, **kwargs):
+    """Get data from rasterio dataset: transform, width, height, crs. Manages windows."""
+    with rasterio.open(str(path)) as ds:
+        if "window" in kwargs:
+            from sertit import rasters_rio
+
+            rio_window = rasters_rio.get_window(ds, kwargs["window"])
+            return (
+                ds.window_transform(rio_window),
+                rio_window.width,
+                rio_window.height,
+                ds.crs,
+            )
+        else:
+            return ds.transform, ds.width, ds.height, ds.crs

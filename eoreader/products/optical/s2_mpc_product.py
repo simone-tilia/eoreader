@@ -26,6 +26,7 @@ from sertit.types import AnyPathStrType, AnyPathType
 
 from eoreader import EOREADER_NAME, cache
 from eoreader.bands import BandNames
+from eoreader.exceptions import InvalidProductError
 from eoreader.products import S2E84Product
 from eoreader.products.optical.optical_product import RawUnits
 from eoreader.products.stac_product import StacProduct
@@ -91,11 +92,13 @@ class S2MpcStacProduct(StacProduct, S2E84Product):
         Function used to post_init the products
         (setting sensor type, band names and so on)
         """
+        self.tile_name = self._get_tile_name()
+
         # Get processing baseline: N0213 -> 02.13
         pr_baseline = float(self.split_name[3][1:]) / 100
         self._processing_baseline = pr_baseline
 
-        # Pre init done by the super class
+        # Post init done by the super class
         super(S2E84Product, self)._post_init(**kwargs)
 
     def _get_name(self) -> str:
@@ -105,7 +108,7 @@ class S2MpcStacProduct(StacProduct, S2E84Product):
         Returns:
             str: True name of the product (from metadata)
         """
-        return self.item.properties["s2:product_uri"]
+        return self.item.properties["s2:product_uri"].split(".")[0]  # remove .SAFE
 
     def _to_reflectance(
         self,
@@ -188,3 +191,30 @@ class S2MpcStacProduct(StacProduct, S2E84Product):
             str: Quicklook path
         """
         return self._get_path("rendered_preview")
+
+    @cache
+    def get_mean_sun_angles(self) -> (float, float):
+        """
+        Get Mean Sun angles (Azimuth and Zenith angles)
+
+        .. code-block:: python
+
+            >>> from eoreader.reader import Reader
+            >>> path = r"LC08_L1GT_023030_20200518_20200527_01_T2.SAFE.zip"
+            >>> prod = Reader().open(path)
+            >>> prod.get_mean_sun_angles()
+            (140.80752656, 61.93065805)
+
+        Returns:
+            (float, float): Mean Azimuth and Zenith angle
+        """
+        # Retrieve angles
+        try:
+            azimuth_angle = self.stac_mtd["properties"]["s2:mean_solar_azimuth"]
+            zenith_angle = self.stac_mtd["properties"]["s2:mean_solar_zenith"]
+        except IndexError as exc:
+            raise InvalidProductError(
+                "mean_solar_azimuth or mean_solar_zenith not found in metadata!"
+            ) from exc
+
+        return azimuth_angle, zenith_angle

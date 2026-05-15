@@ -1,10 +1,35 @@
 # Release History
 
-## 0.24.0 (2026-mm-dd)
+## 0.24.0 (2026-05-05)
 
+- **BREAKING CHANGE**: Using now `dict2xml` rather than `dicttoxml` [#292](https://github.com/sertit/eoreader/issues/292)
 - **ENH: Adding the support of `Satellogic` (`Aleph-1`) constellation** [#229](https://github.com/sertit/eoreader/issues/229)
+- **ENH: Add fallback for TSX/TDX extent when `SUPPORT/GEARTH_POLY.kml` is missing** [#290](https://github.com/sertit/eoreader/issues/290)
+- **ENH: Handle windows when loading DEM bands**
+- ENH: Better report errors with faulty HTML responses with STAC links
 - FIX: Fix border effect (extent replacing footprint) when computing the extent before the footprint for `Umbra` products
 - FIX: Ensure outputing quicklook paths as strings
+- FIX: Get correct buffer for windows in geographic CRS when subsetting SAR data
+- FIX: Fix SNAP fallback issue
+- FIX: Workaround for calibration polarisation issue: don't specify any polarisation in case of single-polarisation product.
+- FIX: Fix several issues with S2 STAC products:
+  - Add missing `_has_mask` method
+  - Fix `get_mean_sun_angles` and imports for MPC products
+  - Fix MPC name and condensed name
+- FIX: Fix conflict between resolution and window name in SAR orthorectified data
+- FIX: Add the possibility to override SAR predictor (and set back to 1)
+- FIX: Use the vector file instead of the WKT polygon in GPT graphs (seems more stable)
+- FIX: Fix regression for despeckle bands (outputting raw band instead)
+- FIX: Fix pixel size management in despeckling
+- FIX: Don't try to hash `default_transform` as kwargs may be unhashable
+- FIX: Correctly propagate pixel size into band file names
+- FIX: Handle correctly missing `product.kml` in RS2 products
+- FIX: Handle windows when loading DEM bands
+- OPTIM: Better management of windows wrt whole files with SAR data
+- OPTIM: Don't set a window name if band files if the window corresponds to the band extent [#286](https://github.com/sertit/eoreader/issues/286)
+- OPTIM: Don't touch the raster (even if ortho) when computing the extent of SAR products
+- SNAP: SNAP-GPT - Subset in read operator instead of adding a subset operator
+- LINT: Lint YAML files
 - DOC: Update copyright to 2026
 
 ## 0.23.0 (2026-01-02)

@@ -17,6 +17,7 @@
 
 import logging
 import os
+import re
 import tempfile
 import xml.etree.ElementTree as ET
 from abc import abstractmethod
@@ -46,6 +47,7 @@ from eoreader.env_vars import (
     DSPK_GRAPH,
     PP_GRAPH,
     SAR_DEF_PIXEL_SIZE,
+    SAR_PREDICTOR,
     SNAP_DEM_NAME,
 )
 from eoreader.exceptions import InvalidProductError, InvalidTypeError
@@ -259,10 +261,14 @@ class SarProduct(Product):
 
         """
         # If we could know if imageio handles Predictor=3:
-        # # 3 for float if handled
-        pred = 3 if self._has_snap_x_or_higher(13) else 1
+        # # 3 for float if handled (SNAP > 13 and not on windows apparently...)
+        pred = os.getenv(
+            SAR_PREDICTOR,
+            1,
+        )
+        # pred = 3 if self._has_snap_x_or_higher(13) else 1
         LOGGER.debug(f"SAR predictor: {pred} (SNAP version: {self.get_snap_version()})")
-        return pred
+        return int(pred)
 
     def _need_snap_to_pre_process(self):
         """This product needs SNAP for pre-process."""
@@ -301,7 +307,6 @@ class SarProduct(Product):
         )
         return rasters.get_footprint(downsampled_band)
 
-    @cache
     def default_transform(self, **kwargs) -> (Affine, int, int, CRS):
         """
         Returns default transform data of the default band (UTM),
@@ -324,8 +329,7 @@ class SarProduct(Product):
         else:
             default_band_path = self.get_default_band_path(**kwargs)
 
-        with rasterio.open(str(default_band_path)) as dst:
-            return dst.transform, dst.width, dst.height, dst.crs
+        return utils.get_default_transform(default_band_path, **kwargs)
 
     def get_default_band(self) -> BandNames:
         """
@@ -361,7 +365,6 @@ class SarProduct(Product):
 
         return default_band
 
-    @cache
     def get_default_band_path(self, **kwargs) -> AnyPathType:
         """
         Get default band path (the first existing one between :code:`VV` and :code:`HH` for SAR data), ready to use (orthorectified)
@@ -429,14 +432,11 @@ class SarProduct(Product):
         Returns:
             gpd.GeoDataFrame: Extent in UTM
         """
-        if self.is_ortho:
-            return super().extent()
-        else:
-            # Get WGS84 extent
-            extent_wgs84 = self.wgs84_extent()
+        # Get WGS84 extent
+        extent_wgs84 = self.wgs84_extent()
 
-            # Convert to UTM
-            return extent_wgs84.to_crs(self.crs())
+        # Convert to UTM
+        return extent_wgs84.to_crs(self.crs())
 
     @cache
     def crs(self) -> crs.CRS:
@@ -533,6 +533,10 @@ class SarProduct(Product):
                         if not speckle_ortho_exists:
                             self._pre_process_sar(
                                 speckle_ortho_band, speckle_band, pixel_size, **kwargs
+                            )
+                        else:
+                            LOGGER.debug(
+                                f"Already existing {speckle_ortho_band.name}, will be used for despeckling."
                             )
 
                         # Despeckle the noisy band
@@ -921,7 +925,7 @@ class SarProduct(Product):
 
         return prod_path
 
-    def _get_subset(self, **kwargs) -> (str, str):
+    def _get_subset(self, tmp_dir, **kwargs) -> (str, str):
         """Get the subset to be applied"""
         window = kwargs.get("window")
         window_to_crop = None
@@ -945,9 +949,13 @@ class SarProduct(Product):
             geo_region = ""
         else:
             try:
+                # geo_region = window
                 # Take a buffer to prevent border effects from terrain correction
-                geo_region_gdf = geometry.buffer(geo_region_gdf, 1000, resolution=2)
-                geo_region = geo_region_gdf.to_crs(WGS84).geometry.to_wkt().iat[0]
+                geo_region = os.path.join(self.output, "geo_region.shp")
+                geo_region_gdf = geometry.buffer(
+                    geo_region_gdf.to_crs(self.crs()), 1000, resolution=2
+                )
+                geo_region_gdf.to_crs(WGS84).to_file(geo_region)
             except Exception as exc:
                 raise NotImplementedError(
                     "Window should either be a GeoDataFrame, readable as a vector or set to None. Bounds, tuple, list and 'rasterio.Window' are not supported."
@@ -963,7 +971,11 @@ class SarProduct(Product):
         return pixel_size, res_deg
 
     def _already_processed_path(
-        self, band: sab, pixel_size: float = None, **kwargs
+        self,
+        band: sab,
+        pixel_size: float = None,
+        use_no_window_path: bool = True,
+        **kwargs,
     ) -> AnyPathType:
         """
         Check if an acceptable orthorectified file already exists on disk
@@ -971,6 +983,7 @@ class SarProduct(Product):
         Args:
             band (sbn): Band to preprocess
             pixel_size (float): Pixel size
+            use_no_window_path (bool): Use the no_window path
             kwargs: Additional arguments
 
         Returns:
@@ -990,7 +1003,32 @@ class SarProduct(Product):
         )
 
         if no_window_ortho_exists:
-            already_ortho = no_window_ortho_path
+            if "window" in kwargs:
+                with_window_ortho_path, with_window_ortho_exists = self._is_existing(
+                    self.get_band_file_name(
+                        band,
+                        pixel_size,
+                        **kwargs,
+                    )
+                )
+                if not with_window_ortho_exists:
+                    arr = utils.read(
+                        no_window_ortho_path,
+                        pixel_size=pixel_size if pixel_size != 0 else None,
+                        **kwargs,
+                    )
+                    utils.write(
+                        arr,
+                        with_window_ortho_path,
+                        dtype=np.float32,
+                        nodata=self._snap_no_data,
+                        predictor=self._get_predictor(),
+                        driver="GTiff",  # SNAP doesn't handle COGs very well apparently
+                    )
+                already_ortho = with_window_ortho_path
+            else:
+                already_ortho = no_window_ortho_path
+
         else:
             # Check if an ortho band with a better resolution exists (and for legacy purposes, without any resolution)
             # If so, use it instead of re-orthorectifying bands
@@ -1009,17 +1047,21 @@ class SarProduct(Product):
                         continue
                     filename = path.get_filename(no_res_file)
                     split_name = filename.split("_")
-                    if pixel_size is not None and "m" in split_name[-1]:
-                        # Check if resolution is better than the one asked
-                        file_res = float(
-                            split_name[-1].replace("m", "").replace("-", ".")
+                    if pixel_size is not None:
+                        res_fragment = list(
+                            filter(re.compile(".*\dm\.").match, split_name)
                         )
-                        if file_res <= pixel_size:
-                            LOGGER.debug(
-                                f"Deriving {band.name} at {pixel_size} m from {filename}."
+                        if res_fragment:
+                            # Check if resolution is better than the one asked
+                            file_res = float(
+                                res_fragment[-1].replace("m", "").replace("-", ".")
                             )
-                            already_ortho = no_res_file
-                            break
+                            if file_res <= pixel_size:
+                                LOGGER.debug(
+                                    f"Deriving {band.name} at {pixel_size} m from {filename}."
+                                )
+                                already_ortho = no_res_file
+                                break
                     elif filename == no_res_name:
                         # No resolution, take it (for legacy purposes)
                         LOGGER.debug(
@@ -1081,17 +1123,23 @@ class SarProduct(Product):
                 prod_path = self._get_snap_path(tmp_dir, **kwargs)
 
                 # Manage subset
-                geo_region, region, window_to_crop = self._get_subset(**kwargs)
+                geo_region, region, window_to_crop = self._get_subset(tmp_dir, **kwargs)
 
                 # Get resolution
                 res_m, res_deg = self._get_resolution(snap_pixel_size)
 
+                # No need to specify polarisation in case of one single polarisation
+                if len(self.pol_channels) == 1:
+                    calib_pola = ""
+                else:
+                    calib_pola = strings.to_cmd_string(band.name)
+
                 # Create SNAP CLI
                 snap_args = [
                     f"-Pfile={strings.to_cmd_string(prod_path)}",
-                    f"-Pgeo_region={strings.to_cmd_string(geo_region)}",
+                    f"-Pvector_file={strings.to_cmd_string(geo_region)}",
                     f"-Pregion={strings.to_cmd_string(region)}",
-                    f"-Pcalib_pola={strings.to_cmd_string(band.name)}",
+                    f"-Pcalib_pola={calib_pola}",
                     f"-Pdem_name={strings.to_cmd_string(dem_name.value)}",
                     f"-Pdem_path={strings.to_cmd_string(dem_path)}",
                     f"-Pcrs={self.crs()}",
@@ -1112,19 +1160,20 @@ class SarProduct(Product):
                     misc.run_cli(cmd_list)
 
                     # Check the BEAM-DIMAP output exists (if not, trigger CSK fallback)
-                    assert (
-                        AnyPath(pp_dim).suffix == ".data" and AnyPath(pp_dim).is_dir()
+                    assert AnyPath(pp_dim).suffix == ".dim", (
+                        f"{pp_dim} is not written in BEAM-DIMAP!"
                     )
+                    assert AnyPath(pp_dim).exists(), f"{pp_dim} doesn't exist!"
 
                 # With SNAP 13.0.0, there is an issue with CSK and calibration:
                 # - no output is written for DGM
                 # - GPT graph fails for SCS
                 # Add this fallback for the moment
-                except AssertionError:
-                    self._fallback_csk_snap_13(write_lia, tmp_dir, snap_args)
+                except AssertionError as ex:
+                    self._fallback_csk_snap_13(write_lia, tmp_dir, snap_args, ex)
                 except RuntimeError as ex:
                     if self.constellation == Constellation.CSK:
-                        self._fallback_csk_snap_13(write_lia, tmp_dir, snap_args)
+                        self._fallback_csk_snap_13(write_lia, tmp_dir, snap_args, ex)
                     else:
                         raise RuntimeError("Something went wrong with SNAP!") from ex
 
@@ -1144,11 +1193,12 @@ class SarProduct(Product):
                     pre_processed_path, pp_dim, band, crop=window_to_crop, **kwargs
                 )
 
-    def _fallback_csk_snap_13(self, write_lia: bool, tmp_dir, snap_args):
+    def _fallback_csk_snap_13(self, write_lia: bool, tmp_dir, snap_args, ex):
         """
         With SNAP 13.0.0, there is an issue with CSK and calibration
         Apply this fallback until it's resolved
         """
+        LOGGER.debug(ex)
         LOGGER.warning(
             "There is an issue with CSK and calibration with SNAP 13.0.0. "
             "This step is removed to make the computation work nevertheless. "
@@ -1205,15 +1255,18 @@ class SarProduct(Product):
         Returns:
             AnyPathType: Despeckled path
         """
-        already_dspk = self._already_processed_path(band, pixel_size, **kwargs)
+        dspk_band = sab.corresponding_despeckle(band)
+        already_dspk = self._already_processed_path(dspk_band, pixel_size, **kwargs)
         if already_dspk is not None:
             return already_dspk
 
         # Create target dir (tmp dir)
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Out files
-            target_file = os.path.join(tmp_dir, f"{self.condensed_name}")
-            dspk_dim = target_file + ".dim"
+            dspk_dim = os.path.join(
+                tmp_dir,
+                self.get_band_file_name(dspk_band, pixel_size, suffix="dim", **kwargs),
+            )
 
             # Despeckle graph
             if DSPK_GRAPH not in os.environ:
@@ -1225,7 +1278,9 @@ class SarProduct(Product):
 
             # Create command line and run it
             if not os.path.isfile(dspk_dim):
-                spk_path = self.get_band_path(band, writable=True, **kwargs)
+                spk_path = self._already_processed_path(
+                    band, pixel_size=pixel_size, **kwargs
+                )
 
                 cmd_list = snap.get_gpt_cli(
                     str(dspk_graph),
@@ -1241,9 +1296,7 @@ class SarProduct(Product):
                     raise RuntimeError("Something went wrong with SNAP!") from ex
 
             # Convert DIMAP images to GeoTiff
-            out = self._write_sar(
-                despeckled_path, dspk_dim, sab.corresponding_despeckle(band), **kwargs
-            )
+            out = self._write_sar(despeckled_path, dspk_dim, dspk_band, **kwargs)
 
         return out
 
@@ -1425,6 +1478,7 @@ class SarProduct(Product):
         pixel_size: float | tuple = None,
         size: list | tuple = None,
         resampling: Resampling = Resampling.bilinear,
+        **kwargs,
     ) -> AnyPathType:
         """
         Compute Hillshade mask

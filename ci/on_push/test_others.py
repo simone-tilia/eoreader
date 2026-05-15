@@ -247,26 +247,28 @@ def test_dems():
                 **{"slope_dem": slope_dem, "hillshade_dem": hillshade_dem},
             )
 
-        assert next(prod.output.glob(f"**/*DEM_{path.get_filename(dem)}.vrt")).is_file()
         assert next(
-            prod.output.glob(f"**/*DEM_{path.get_filename(slope_dem)}.vrt")
+            prod.output.glob(f"**/*DEM_{path.get_filename(dem)}*.vrt")
         ).is_file()
         assert next(
-            prod.output.glob(f"**/*DEM_{path.get_filename(hillshade_dem)}.vrt")
+            prod.output.glob(f"**/*DEM_{path.get_filename(slope_dem)}*.vrt")
         ).is_file()
         assert next(
-            prod.output.glob(f"**/*SLOPE_{path.get_filename(slope_dem)}.tif")
+            prod.output.glob(f"**/*DEM_{path.get_filename(hillshade_dem)}*.vrt")
         ).is_file()
         assert next(
-            prod.output.glob(f"**/*HILLSHADE_{path.get_filename(hillshade_dem)}.tif")
+            prod.output.glob(f"**/*SLOPE_{path.get_filename(slope_dem)}*.tif")
+        ).is_file()
+        assert next(
+            prod.output.glob(f"**/*HILLSHADE_{path.get_filename(hillshade_dem)}*.tif")
         ).is_file()
 
         with pytest.raises(StopIteration):
-            next(prod.output.glob(f"**/*SLOPE_{path.get_filename(hillshade_dem)}.tif"))
+            next(prod.output.glob(f"**/*SLOPE_{path.get_filename(hillshade_dem)}*.tif"))
         with pytest.raises(StopIteration):
-            next(prod.output.glob(f"**/*HILLSHADE_{path.get_filename(slope_dem)}.tif"))
+            next(prod.output.glob(f"**/*HILLSHADE_{path.get_filename(slope_dem)}*.tif"))
         with pytest.raises(StopIteration):
-            next(prod.output.glob(f"**/*HILLSHADE_{path.get_filename(dem)}.tif"))
+            next(prod.output.glob(f"**/*HILLSHADE_{path.get_filename(dem)}*.tif"))
 
 
 @pytest.mark.skipif(
@@ -593,3 +595,24 @@ def test_constellations():
 
 def test_regex_glob():
     ci.assert_val(convert_glob_to_regex("**/*_rgb.png"), r".*/.*_rgb\.png", "ASF regex")
+
+
+def test_filename_window():
+    prod_path = opt_path().joinpath("LT05_L1TP_200030_20111110_20200820_02_T1")
+    window_path = others_path().joinpath(
+        "20201220T104856_L8_200030_OLI_TIRS_window.geojson"
+    )
+    prod = READER.open(prod_path, remove_tmp=True)
+    extent = prod.extent()
+    ci.assert_val(
+        prod.get_band_file_name("RED", pixel_size=20, window=extent),
+        prod.get_band_file_name("RED", pixel_size=20),
+        "Extent window",
+    )
+
+    with pytest.raises(AssertionError):
+        ci.assert_val(
+            prod.get_band_file_name("RED", pixel_size=20, window=window_path),
+            prod.get_band_file_name("RED", pixel_size=20),
+            "Small window",
+        )

@@ -2057,7 +2057,6 @@ class S2Product(OpticalProduct):
 
         return tf, width, height, self.crs()
 
-    @cache
     def default_transform(self, **kwargs) -> (Affine, int, int, CRS):
         """
         Returns default transform data of the default band (UTM),
@@ -2075,9 +2074,11 @@ class S2Product(OpticalProduct):
         """
         if self._processing_baseline < 2.07:
             default_path = self.get_default_band_path(**kwargs)
+
+            # This doesn't handle windows sadly, but shouldn't happen anymore
             return self._get_geocoding_info(default_path)
         else:
-            return super().default_transform()
+            return super().default_transform(**kwargs)
 
     @cache
     def get_cloud_cover(self) -> float:
