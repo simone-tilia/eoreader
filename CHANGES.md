@@ -1,5 +1,18 @@
 # Release History
 
+## 0.24.2 (2026-07-15)
+
+- FIX: Fix 4-bands `VantorBandId.Multi`'s band order (BGRN instead of NRGB)
+- FIX: Set back LIA (SAR local incidence angles) computation in default pipeline since SNAP 13 has been fixed [#276](https://github.com/sertit/eoreader/issues/276)
+
+## 0.24.1 (2026-06-30)
+
+- FIX: Better SNAP geo_region name to disambiguate between products
+- FIX: Fix subsetting SAR data with a window (cannot be done directly in the ESA SNAP Read Operator)
+- FIX: Fix `KeyError` when loading a Landsat Collection-2 band from a STAC item whose asset name differs from the STAC common name (e.g. `nir08` instead of `nir`) [#307](https://github.com/sertit/eoreader/issues/307) - by @gaoflow
+- FIX: Handle `TypeError` when passing `resampling` to `load()` on Sentinel-2 - by @SAY-5
+- FIX: Fix masks loaded N times when N associated bands are requested [#314](https://github.com/sertit/eoreader/issues/314) by @cmayet
+
 ## 0.24.0 (2026-05-05)
 
 - **BREAKING CHANGE**: Using now `dict2xml` rather than `dicttoxml` [#292](https://github.com/sertit/eoreader/issues/292)

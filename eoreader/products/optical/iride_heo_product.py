@@ -477,12 +477,10 @@ class IrideHeoProduct(OpticalProduct):
             xr.DataArray: Band in reflectance
         """
         # Ensure float computation
-        da = band_arr.astype("float32")
-        da = da / 10000.0
+        band_arr = band_arr / 10000.0
 
         LOGGER.debug(f"Converted {band.name} to reflectance")
-
-        return da
+        return band_arr.astype(np.float32)
 
 
     def get_cloud_cover(self) -> float | None:
@@ -584,6 +582,8 @@ class IrideHeoProduct(OpticalProduct):
         no_data_mask = np.where(
             band_arr.data == self._raw_nodata, self._mask_true, self._mask_false
         ).astype(np.uint8)
+
+        LOGGER.debug(f"Nodata mask created (where values are {self._raw_nodata})")
 
         # -- Merge masks
         return self._set_nodata_mask(band_arr, no_data_mask)

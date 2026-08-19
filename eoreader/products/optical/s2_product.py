@@ -894,7 +894,8 @@ class S2Product(OpticalProduct):
                     if mask_path.is_file():
                         band_dict[key] = utils.read(mask_path)
                     else:
-                        bands_to_load.append(band)
+                        if band not in bands_to_load:
+                            bands_to_load.append(band)
                         associated_bands_to_load[band].append(associated_band)
 
             # Then load other bands that haven't been loaded before
@@ -1008,7 +1009,7 @@ class S2Product(OpticalProduct):
                 resampling=Resampling.nearest,
                 as_type=np.uint8,
                 masked=False,
-                **kwargs,
+                **utils._prune_keywords(additional_keywords=["resampling"], **kwargs),
             )
         else:
             if self._processing_baseline < 4.0:
@@ -1157,7 +1158,7 @@ class S2Product(OpticalProduct):
             resampling=Resampling.nearest,
             as_type=np.uint8,
             masked=False,
-            **kwargs,
+            **utils._prune_keywords(additional_keywords=["resampling"], **kwargs),
         )
 
         return mask
